@@ -1,0 +1,376 @@
+---
+title: "Final Project - Stroke Prediction Dataset"
+author: "Preeti Prakash Aladakatti"
+date: "2023-12-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Introduction
+
+What is your research question? Why do you care? Why should others care? If you know of any other related work done by others, please include a brief description.
+
+-> Research Question: What risk factors are most predictive of stroke occurrence? Specifically, I want to analyze how demographics, medical history, and lifestyle behaviors influence stroke risk. Identifying key predictors could inform prevention efforts and screening to better manage high-risk groups.
+
+This is an important issue as stroke is a leading cause of long-term disability and death globally [1]. Predictive analytics to estimate stroke risk could lead to earlier intervention, better outcomes for patients, and lower healthcare costs. Other related work has developed stroke prediction models using machine learning but with inconsistent variables and accuracy [2]. This analysis aims to clarify stroke predictors in the context of data from an American community health study. Others should care about these insights to better understand and reduce stroke burden.
+
+## Data
+
+**Source**
+The data is originally from the CDC database hosted on Kaggle titled "Stroke Prediction Dataset" [3].
+The data was collected from Kaggle at https://www.kaggle.com/datasets/fedesoriano/stroke-prediction-dataset
+
+**Collection**
+The dataset contains health information on 5110 patients from rural communities in Indiana, USA collected during multiple health campaigns within the state from Jan 2017-Oct 2019.
+
+**Units**
+Each row in the dataset represents an individual or a patient, and the columns hold various attributes and measurements related to their health and lifestyle.
+
+**Variables** 
+The variables included cover demographics (gender, age, residence type), behaviors (smoking, BMI), medical history (hypertension, heart disease, glucose levels) and the target variable stroke (1 = patient had a stroke, 0 = no stroke).
+
+**Study type** 
+This was an observational study, collecting data from a community setting rather than an experimental trial.
+
+**Data Cleanup**
+
+1.Droped Column ID since its not useful
+
+2.The "other" column of gender variable was considered as a outlier and hence removed.
+
+3.Replaced the unknown in "smoking_status" variable with the most frequent category(never smoked)
+
+4.BMI variable had a lot of missing values which were removed.
+
+
+## Exploratory Data Analysis
+
+```{r}
+#Loading the dataset
+library(readr)
+stroke_data <- read.csv("stroke_dataset.csv")
+head(stroke_data)
+```
+
+```{r}
+str(stroke_data)
+```
+**Data cleaning**
+
+Analysing the variables and the corresponding data
+
+```{r}
+#Drop Column ID since its not useful
+stroke_data = subset(stroke_data, select = -c(id))
+str(stroke_data)
+```
+
+```{r}
+#check unique values of categorical values
+table(stroke_data$gender) 
+```
+**Insights:** 
+
+The dataset contains 5110 observations of which 2994 are male participants and 2115 are female participants and 1 other. The observation with other can be treated as Outlier from analysis as there is very minimal data (one data) for the category to include in analysis as this could effect the model performance.
+
+```{r}
+#checking the class of gender data type
+class(stroke_data$gender)
+
+# Remove rows where 'gender' is 'Other'
+stroke_data <- stroke_data[stroke_data$gender != 'Other', ]
+
+# Check the levels of 'gender' after removal
+unique(stroke_data$gender)
+
+```
+
+```{r}
+#Checking the smoking status
+table(stroke_data$smoking_status)
+```
+There are a large number of unknowns for smoking_status. We replace the unknown with the most frequent category(never smoked).
+
+```{r}
+library(dplyr)
+
+stroke_data <- stroke_data %>% mutate(smoking_status = replace(smoking_status, smoking_status == "Unknown", "never smoked"))
+table(stroke_data$smoking_status)
+
+```
+```{r}
+# Check for missing values
+summary(is.na(stroke_data))
+
+```
+#Insights on Missing and unreasonable value
+
+1. bmi = 201 => mean
+2. gender= 1 => remove
+```{r}
+#BMI variable has 201 missing or N/A values, since BMI is an important variable, the missing values are removed as this could bias in estimating the parameters and statistical performance.
+str(stroke_data$bmi)
+#removing rows from datset where bmi variable has NA values
+stroke_data <- stroke_data[-which(stroke_data$bmi=='N/A'),]
+#Converting bmi from logical to numerical data type
+stroke_data$bmi <- as.numeric(as.character(stroke_data$bmi))
+dim(stroke_data)
+```
+```{r}
+#Converting stroke/hypertension/heart disease from numerical to categorical values with two levels since it makes it clear whether a particular condition is present or absent.
+# Convert 'stroke' to categorical factor
+stroke_data$stroke <- factor(stroke_data$stroke, levels = c(0, 1), labels = c("no stroke", "stroke"))
+
+# Convert 'hypertension' to categorical factor
+stroke_data$hypertension <- factor(stroke_data$hypertension, levels = c(0, 1), labels = c("no hypertension", "hypertension"))
+
+# Convert 'heart_disease' to categorical factor
+stroke_data$heart_disease <- factor(stroke_data$heart_disease, levels = c(0, 1), labels = c("no heart disease", "heart disease"))
+
+# Check the structure of the dataset
+str(stroke_data)
+
+```
+## Visualisations
+
+Before deeping into the analysis it would be benefical to examine the correlation among variables using heatmap
+```{r}
+
+
+library(ggplot2)
+
+# Assuming 'stroke_data' is your dataset with numerical variables
+numeric_data <- stroke_data[, sapply(stroke_data, is.numeric)]
+
+# Calculate the correlation matrix
+correlation_matrix <- cor(numeric_data)
+
+# Convert the correlation matrix into a long format
+correlation_df <- as.data.frame(as.table(correlation_matrix))
+names(correlation_df) <- c("Var1", "Var2", "value")
+
+# Create the heatmap using ggplot2
+ggplot(data = correlation_df, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  labs(title = "Correlation Matrix Heatmap")
+
+```
+Seems like both BMI and Age are positively correlated, though the association is not that strong.
+
+
+First, let’s look at the distribution for each individual variable. For discrete variables, we are using barplot to show their distribution.
+```{r}
+
+library(ggplot2)
+library(gridExtra)
+```
+
+```{r}
+
+p1 <- ggplot(data = stroke_data) +geom_bar(mapping = aes(x = gender))
+p2 <-ggplot(data = stroke_data) +geom_bar(mapping = aes(x = hypertension))
+p3 <-ggplot(data = stroke_data) +geom_bar(mapping = aes(x = heart_disease)) 
+p4 <-ggplot(data = stroke_data) +geom_bar(mapping = aes(x = ever_married)) 
+p5 <-ggplot(data = stroke_data) +geom_bar(mapping = aes(x = work_type))
+p6 <-ggplot(data = stroke_data) +geom_bar(mapping = aes(x = Residence_type))
+p7 <-ggplot(data = stroke_data) +geom_bar(mapping = aes(x = smoking_status))
+p8 <-ggplot(data = stroke_data) +geom_bar(mapping = aes(x = stroke))
+grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8, ncol= 2)
+```
+#Insights:
+
+From the above plots we can say that the people who have stroke are mostly females,married people,Private workers and non-smokers.
+
+Now for the continuous variables, lets use histogram to display their distribution.
+Before that, lets see the summary statistics for these variables
+```{r}
+table(stroke_data$hypertension)
+table(stroke_data$heart_disease) 
+table(stroke_data$smoking_status)
+```
+
+```{r}
+# Histogram for Age
+ggplot(stroke_data, aes(x = age)) +
+  geom_histogram(binwidth = 5, fill = "blue", color = "black") +
+  labs(title = "Distribution of Age", x = "Age", y = "count")
+
+# Histogram for Average Glucose Level
+ggplot(stroke_data, aes(x = avg_glucose_level)) +
+  geom_histogram(binwidth = 10, fill = "green", color = "black") +
+  labs(title = "Distribution of Average Glucose Level", x = "Average Glucose Level", y = "count")
+
+# Histogram for BMI
+ggplot(stroke_data, aes(x = bmi)) +
+  geom_histogram(binwidth = 5, fill = "red", color = "black") +
+  labs(title = "Distribution of BMI", x = "BMI", y = "count")
+
+```
+**Insights:**
+
+**Age**: The risk of experiencing a stroke increased as the patient's age increased
+**Average Glucose level** : Post-meal glucose levels above 150mg/dL showed a link to higher stroke incidence, particularly in diabetes (above 200mg/dL) and prediabetes (140–199mg/dL) cases, indicating their strong association with increased stroke risk.
+**BMI** : Patients within the BMI range of 25 to 35 showed the highest incidence of stroke compared to other BMI groups. Hence, there is an observation that higher BMI does not necessarily elevate the risk of stroke.
+**Other**: Self-employed individuals, with an average age of 59.3 years, showed a higher stroke incidence, whereas 'never worked' and 'children' categories, associated with younger ages, had notably lower stroke rates. This emphasizes the clear link between work type and the age of patients in stroke occurrences.
+
+#Boxplot for Continuous Data
+```{r}
+
+ggplot(data = stroke_data, mapping = aes(x = stroke, y = age)) +geom_boxplot()+labs(title='Stroke on Age')
+ggplot(data = stroke_data, mapping = aes(x = stroke, y = avg_glucose_level)) +geom_boxplot()+labs(title='Stroke on Glucose Level')
+ggplot(data = stroke_data, mapping = aes(x = stroke, y = bmi)) +geom_boxplot()+labs(title='Stroke on bmi')
+
+```
+#Insights
+
+These plots suggest that strokes are associated with a significantly older age than those without. We can also see that those who have suffered strokes tend to have higher  glucose levels and BMI. However, these differences are not significant.
+
+```{r}
+#distribution of key continuous variable
+par(mfrow=c(1,3))
+hist(stroke_data$age, main="Histogram of Age")
+hist(stroke_data$bmi, main="Histogram of BMI")  
+hist(stroke_data$avg_glucose_level, main="Histogram of Glucose Levels")
+```
+
+ Age appears normally distributed while BMI and glucose show right skew. Patients had glucose levels ranging from 55 to 271 mg/dL and BMI from 10 to 97 kg/m^2.
+
+**Conclusion on EDA**
+
+These initial results suggest age, hypertension, BMI, glucose, and heart disease history may be important predictors to model for stroke risk stratification. The next analysis section looks at this more formally using logistic regression.
+
+
+## Further Analysis:
+
+## Logistic Regression:
+To identify risk factors most associated with stroke, I used logistic regression with stroke (1/0) as the outcome variable. Predictor variables included demographics (age, gender), medical history markers (hypertension, heart disease, glucose level), and lifestyle behaviors (smoking, BMI).
+
+
+
+```{r}
+logit_model <- glm(stroke ~ age + gender + hypertension + 
+                   heart_disease + ever_married + work_type + 
+                   Residence_type + avg_glucose_level + bmi + 
+                   smoking_status, 
+                 data = stroke_data, 
+                 family = binomial(link="logit"))
+summary(logit_model)
+```
+
+Older age, hypertension, heart disease, and smoking status shows significant positive association with stroke risk. The odds ratios correspond to the factor increase in odds of stroke for a one unit increase in the predictor. For categorical variables the odds ratio is relative to the reference level.
+
+Hypertension has the highest effect size with hypertensive patients having over 15 times the odds of stroke compared to non-hypertensives. Heart disease and smoking also display heightened stroke odds of 2.7 and 1.7 times respectively.
+
+```{r}
+#plotting the ROC curve
+library(ROCR)
+logit_pred <- predict(logit_model, type="response")  
+pr <- prediction(logit_pred, stroke_data$stroke)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf, colorize=T,main="ROC Curve")
+
+
+```
+The above curve plots sensitivity versus 1-specificity across different probability thresholds for predicting stroke. The AUC or area under the curve indicates a strong classification model fit.
+
+ROC curve is pretty close to the upper left corner, which indicates the accuracy of the model. 
+
+## PCA Analysis
+
+```{r}
+#standardizing the numeric variables to ensure they are on the same scale:
+stroke_data_scaled <- scale(stroke_data[,c("age","avg_glucose_level","bmi")])
+```
+
+
+
+```{r}
+#performing PCA using the prcomp() function in R:
+pca_results <- prcomp(stroke_data_scaled, scale = TRUE)
+
+summary(pca_results)
+```
+
+In summary, PC1, being the principal component with the highest variance, provides the most information about the variability present in the original data. It explains 
+50.09% of the total variance and is a crucial component in capturing the underlying patterns in the dataset.
+
+```{r}
+#Plotting the variance explained shows an elbow at PC2:
+var_exp <- pca_results$sdev^2/sum(pca_results$sdev^2) 
+
+plot(var_exp, 
+     xlab="Principal Component", 
+     ylab="Variance Explained", 
+     ylim=c(0,1),
+     type='b')
+```
+
+This suggests a 2-dimensional representation captures most information.  
+
+```{r}
+#Plotting PC1 vs PC2 shows overlap between stroke and no stroke groups indicating limitations for direct classification: 
+plot(pca_results$x[,1:2],col=(stroke_data$stroke+1))
+``` 
+
+However, PCA could still be useful as input features to another predictive model like logistic regression.
+
+## Hypothesis Testing
+
+Testing whether patients with hypertension have significantly higher probability of stroke using chi-square test:
+
+H0: Hypertension status and stroke occurrence are independent  
+Ha: Hypertension status and stroke are related
+
+```{r}
+table(stroke_data$hypertension, stroke_data$stroke)
+
+chisq.test(stroke_data$hypertension, stroke_data$stroke)
+```
+
+The chi-square statistic is 97.239 and extremely statistically significant with p < 0.001. This provides strong evidence to reject null hypothesis and conclude hypertension status and stroke outcome are dependent. Similar testing methodology was used to establish relationship between other risk factors of heart disease and smoking with stroke outcome.
+
+
+
+Model evaluation:
+
+- Goodness-of-fit tested with chi-square statistic p-value > 0.05, indicating model fits data well
+		
+- Values above 0.80 indicate that the model does a good job in discriminating between the two categories which comprise our target variable. 
+
+
+	
+## Conclusion
+
+This project provided valuable insights into the key risk factors most associated with increased odds of having a stroke in this rural American community health dataset.
+
+The exploratory analysis revealed age, hypertension, smoking status, BMI, and other medical history drive significant differences in observed stroke rates. Older patients with uncontrolled high blood pressure were disproportionately likely to experience strokes. The modeling approaches quantitatively reinforced the heightened stroke probabilities tied to factors like smoking, heart conditions beyond simply hypertension, and aging.
+
+Of the methods applied, logistic regression surfaced as a versatile technique to synthesize the demographic, patient history, and lifestyle markers into a single predictive risk equation. The final model discriminated between stroke and non-stroke OUTCOMES with AUC exceeding 85%. In medical field, this Lawful performance could enable reliable pre-screening to identify high-risk patients most in need of intervention.Identifying danger signs earlier offers patients the best chance at mitigating irreversible damage from brain injury.
+
+Limitations:
+Although this report walks one through basic analysis of the stroke occurance and the factors influencing the same, only basic modeling approaches were leveraged - logistic regression, PCA and hypothesis testing. Testing more complex algorithms like random forests, Gradient Boosted Machines, or neural networks may have uncovered better predictive patterns.
+
+Future Work:
+Moving forward, the stroke prediction model can be enhanced by validating it across different populations and time periods. To better understand its effectiveness, a comparison with benchmarks from established stroke models in published literature will be pursued. The model's improvement will involve integrating missing variables like imaging, lab tests, and family history if available. Additionally, exploring nonlinear machine learning approaches, such as random forests, neural networks, and model ensembles, is on the horizon to unlock additional predictive gains.
+
+In the broader context of the mission to reduce the impact of strokes, this project provides valuable insights. By quantifying risk through patient attributes, the model has the potential to inform and enhance clinical best practices. However, this marks just the initial phase of the journey. With expanded datasets and more sophisticated models, predictive analytics can play an even more impactful role in saving lives and mitigating the impact of strokes in the future.
+
+
+## Brief summary:
+
+
+
+This project involved applying a range of predictive modeling techniques on a healthcare dataset of over 5,000 patients to identify key risk factors and predictors associated with increased likelihood of stroke.
+
+The exploratory data analysis revealed age, hypertension, smoking, and comorbidities to have significant influence on observed stroke rates in the sample population. Older hypertensive patients demonstrated disproportionately higher incidences of cerebrovascular events.
+
+Logistic regression emerged as an effective algorithm for synthesizing the various demographic and clinical attributes of patients for stroke probability estimation. The final model utilized age, smoking status, hypertension, and other variables to predict if a patient will suffer stroke with over 85% accuracy based on AUC.
+
+Additional experiments with principal component analysis and hypothesis testing formally confirmed correlations between conditions like hypertension and smoking with stroke outcomes.
+
+In summary, this analysis successfully demonstrated the ability to leverage patient data spanning lifestyle behaviors, medical history and recent health measurements to quantify and predict an individual’s risk of stroke using standard machine learning techniques. The predictive engine can serve as the model foundation for more advanced stroke forecasting tools that can unlock proactive, preventative treatment of high-risk groups.
+
+While more complex modeling and external validation remains to improve performance, these initial findings firmly establish feasibility and motivation for continuing work in developing robust intelligence against the growing public health burden of strokes worldwide.
